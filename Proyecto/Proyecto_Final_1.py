@@ -8,8 +8,8 @@ import threading
 import pyttsx3
 from collections import Counter
 
-#holaaaaaaaaaaaaaaaaaaaaaa
-
+#holaaaaaaaaaaaaaaaaaaaaaamundoooooooooooooooooooooooooo
+#whatsapppppp
 def speak_async(engine, text):
     threading.Thread(target=lambda: (engine.say(text), engine.runAndWait())).start()
 
