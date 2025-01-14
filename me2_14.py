@@ -1,13 +1,4 @@
-import cv2 
-#se te prendio la camara?
-import mediapipe as mp # habria q aprender github i
-import tensorflow as tf
-import numpy as np
-import os
-import time
-import threading
-import pyttsx3
-from collections import Counter
+
 
 def speak_async(engine, text):
     threading.Thread(target=lambda: (engine.say(text), engine.runAndWait())).start()
