@@ -10,6 +10,7 @@ from collections import Counter
 
 #holaaaaaaaaaaaaaaaaaaaaaamundoooooooooooooooooooooooooo
 #whatsapppppp
+#holadasdasdasdsda
 
 #que onda
 def speak_async(engine, text):
