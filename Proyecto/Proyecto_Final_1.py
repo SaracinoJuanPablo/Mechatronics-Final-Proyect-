@@ -10,6 +10,8 @@ from collections import Counter
 
 #holaaaaaaaaaaaaaaaaaaaaaamundoooooooooooooooooooooooooo
 #whatsapppppp
+
+#que onda
 def speak_async(engine, text):
     threading.Thread(target=lambda: (engine.say(text), engine.runAndWait())).start()
 
