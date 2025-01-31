@@ -1,0 +1,31 @@
+BoxLayout:
+    orientation: 'vertical'
+    Label:
+        text: "Reconocimiento de Lenguaje de Señas"
+        font_size: 24
+        size_hint_y: 0.2
+
+    Button:
+        text: "Detectar Manos"
+        size_hint_y: 0.2
+        on_press: app.detect_hands()
+
+    Button:
+        text: "Recolectar Datos"
+        size_hint_y: 0.2
+        on_press: app.collect_data()
+
+    Button:
+        text: "Entrenar Modelo"
+        size_hint_y: 0.2
+        on_press: app.train_model()
+
+    Button:
+        text: "Evaluar"
+        size_hint_y: 0.2
+        on_press: app.evaluate()
+
+    Button:
+        text: "Salir"
+        size_hint_y: 0.2
+        on_press: app.stop()
