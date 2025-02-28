@@ -1,0 +1,35 @@
+<CameraWidget>:
+    orientation: 'vertical'
+    Label:
+        id: camera_preview
+        size_hint: 1, 0.7
+        
+    BoxLayout:
+        size_hint: 1, 0.3
+        orientation: 'vertical'
+        
+        Label:
+            id: status_label
+            size_hint: 1, 0.2
+            text: 'Estado: Listo'
+            font_size: '20sp'
+            
+        BoxLayout:
+            size_hint: 1, 0.8
+            spacing: 10
+            padding: 10
+            
+            Button:
+                text: 'Detectar'
+                on_press: root.start_detection()
+                font_size: '18sp'
+                
+            Button:
+                text: 'Entrenar'
+                on_press: root.start_training()
+                font_size: '18sp'
+                
+            Button:
+                text: 'Traducir'
+                on_press: root.start_translation()
+                font_size: '18sp'
