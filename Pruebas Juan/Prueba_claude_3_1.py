@@ -41,7 +41,7 @@ class HandGestureRecognition:
         self.mp_drawing = mp.solutions.drawing_utils
         
         # Configuración de directorios para almacenar datos
-        self.data_dir = "hand_gestures_data"
+        self.data_dir = "hand_gestures_data_3"
         os.makedirs(self.data_dir, exist_ok=True)
         
         # Modelo y datos de entrenamiento
@@ -50,9 +50,9 @@ class HandGestureRecognition:
         self.label_encoder = LabelEncoder()
         self.data = []
         self.labels = []
-        self.model_file = "hand_gesture_nn_model.h5"
-        self.scaler_file = "hand_gesture_scaler.pkl"
-        self.encoder_file = "hand_gesture_encoder.pkl"
+        self.model_file = "hand_gesture_nn_model_3.h5"
+        self.scaler_file = "hand_gesture_scaler_3.pkl"
+        self.encoder_file = "hand_gesture_encoder_3.pkl"
         
         # Estado del sistema
         self.is_trained = False
@@ -192,7 +192,7 @@ class HandGestureRecognition:
             "features": self.data,
             "labels": self.labels
         }
-        with open(f"{self.data_dir}/gesture_data.pkl", "wb") as f:
+        with open(f"{self.data_dir}/gesture_data_3.pkl", "wb") as f:
             pickle.dump(data, f)
         self.set_message(f"Datos guardados: {len(self.data)} muestras", 1)
     
@@ -204,7 +204,7 @@ class HandGestureRecognition:
             bool: True si se cargaron los datos correctamente, False en caso contrario
         """
         try:
-            with open(f"{self.data_dir}/gesture_data.pkl", "rb") as f:
+            with open(f"{self.data_dir}/gesture_data_3.pkl", "rb") as f:
                 data = pickle.load(f)
                 self.data = data["features"]
                 self.labels = data["labels"]
@@ -419,7 +419,7 @@ class HandGestureRecognition:
         """
         Compara el rendimiento con el modelo anterior (si existe).
         """
-        prev_model_file = "hand_gesture_model.pkl"
+        prev_model_file = "hand_gesture_model_3.pkl"
         
         try:
             # Intentar cargar el modelo anterior (RandomForest)
