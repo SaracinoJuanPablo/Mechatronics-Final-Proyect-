@@ -10,12 +10,6 @@ from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l2
-
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv1D, MaxPooling1D, LSTM, Dropout, Dense
-
-
-
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
@@ -47,7 +41,7 @@ class HandGestureRecognition:
         self.mp_drawing = mp.solutions.drawing_utils
         
         # Configuración de directorios para almacenar datos
-        self.data_dir = "hand_gestures_data_4"
+        self.data_dir = "hand_gestures_data_3"
         os.makedirs(self.data_dir, exist_ok=True)
         
         # Modelo y datos de entrenamiento
@@ -56,9 +50,9 @@ class HandGestureRecognition:
         self.label_encoder = LabelEncoder()
         self.data = []
         self.labels = []
-        self.model_file = "hand_gesture_nn_model_4.h5"
-        self.scaler_file = "hand_gesture_scaler_4.pkl"
-        self.encoder_file = "hand_gesture_encoder_4.pkl"
+        self.model_file = "hand_gesture_nn_model_3.h5"
+        self.scaler_file = "hand_gesture_scaler_3.pkl"
+        self.encoder_file = "hand_gesture_encoder_3.pkl"
         
         # Estado del sistema
         self.is_trained = False
@@ -66,10 +60,7 @@ class HandGestureRecognition:
         self.current_gesture = ""
         self.samples_collected = 0
         self.max_samples = 50
-        self.sequence_length = 50  # Ajustar según la cantidad de frames por secuencia
-        self.total_landmarks = 21 * 3  # Suponiendo 21 puntos por mano con (x, y, z)
-        self.scaler = StandardScaler()
-        self.label_encoder = LabelEncoder()
+        
         # Control de tiempo para la recolección continua
         self.last_sample_time = 0
         self.sample_delay = 0.05  # 50ms entre muestras (20 muestras por segundo)
@@ -201,7 +192,7 @@ class HandGestureRecognition:
             "features": self.data,
             "labels": self.labels
         }
-        with open(f"{self.data_dir}/gesture_data_4.pkl", "wb") as f:
+        with open(f"{self.data_dir}/gesture_data_3.pkl", "wb") as f:
             pickle.dump(data, f)
         self.set_message(f"Datos guardados: {len(self.data)} muestras", 1)
     
@@ -213,7 +204,7 @@ class HandGestureRecognition:
             bool: True si se cargaron los datos correctamente, False en caso contrario
         """
         try:
-            with open(f"{self.data_dir}/gesture_data_4.pkl", "rb") as f:
+            with open(f"{self.data_dir}/gesture_data_3.pkl", "rb") as f:
                 data = pickle.load(f)
                 self.data = data["features"]
                 self.labels = data["labels"]
@@ -223,7 +214,7 @@ class HandGestureRecognition:
             self.set_message("No se encontraron datos previos", 2)
             return False
     
-    def create_neural_network(self, sequence_length, total_landmarks, num_classes):
+    def create_neural_network(self, input_shape, num_classes):
         """
         Crea una red neuronal liviana para reconocimiento de gestos.
         
@@ -234,23 +225,25 @@ class HandGestureRecognition:
         Returns:
             Modelo de red neuronal compilado
         """
-        """
-        Crea un modelo CNN + LSTM para el reconocimiento de gestos.
-        """
-        inputs = Input(shape=(sequence_length, total_landmarks))
-        x = Conv1D(64, 3, activation='relu', padding='same')(inputs)
-        x = MaxPooling1D(2)(x)
-        x = LSTM(64, return_sequences=True)(x)
-        x = Dropout(0.5)(x)
-        x = LSTM(32)(x)
-        x = Dropout(0.5)(x)
-        outputs = Dense(num_classes, activation='softmax')(x)
-
-        model = Model(inputs=inputs, outputs=outputs)
+        model = Sequential([
+            # Capa de entrada con regularización para prevenir sobreajuste
+            Dense(64, activation='relu', input_shape=(input_shape,), 
+                  kernel_regularizer=l2(0.001)),
+            BatchNormalization(),
+            Dropout(0.3),  # Dropout para mejorar generalización
+            
+            # Capa oculta 
+            Dense(32, activation='relu', kernel_regularizer=l2(0.001)),
+            BatchNormalization(),
+            Dropout(0.2),
+            
+            # Capa de salida
+            Dense(num_classes, activation='softmax')
+        ])
         
         # Compilar con optimizador Adam y tasa de aprendizaje reducida para estabilidad
         model.compile(
-            optimizer=Adam(learning_rate=0.0001),
+            optimizer=Adam(learning_rate=0.001),
             loss='sparse_categorical_crossentropy',
             metrics=['accuracy']
         )
@@ -276,11 +269,6 @@ class HandGestureRecognition:
         
         # Codificar etiquetas
         y_encoded = self.label_encoder.fit_transform(y)
-        y_one_hot = tf.keras.utils.to_categorical(y_encoded)
-
-         # Verificar las dimensiones de entrada
-        num_samples, feature_dim = X.shape
-        X = X.reshape(num_samples, self.sequence_length, self.total_landmarks)  # Ajustar dimensiones
         
         # Dividir datos en conjuntos de entrenamiento y prueba
         X_train, X_test, y_train, y_test = train_test_split(
@@ -288,15 +276,14 @@ class HandGestureRecognition:
         )
         
         # Normalizar datos
-        X_train = self.scaler.fit_transform(X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
-        X_test = self.scaler.transform(X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
+        X_train = self.scaler.fit_transform(X_train)
+        X_test = self.scaler.transform(X_test)
         
         # Crear modelo
         num_classes = len(set(y_encoded))
         self.set_message(f"Entrenando modelo con {num_classes} clases...", 2)
         
-        # Crear el nuevo modelo CNN + LSTM
-        self.model = self.create_neural_network(self.sequence_length, self.total_landmarks, num_classes)
+        self.model = self.create_neural_network(X_train.shape[1], num_classes)
         
         # Callbacks para mejorar el entrenamiento
         callbacks = [
@@ -321,21 +308,21 @@ class HandGestureRecognition:
             X_train, y_train,
             epochs=50,
             batch_size=32,
-            validation_data=(X_test, y_test),
+            validation_split=0.2,
             callbacks=callbacks,
+            verbose=1
         )
         
         # Calcular tiempo de entrenamiento
         training_time = time.time() - start_time
         
-        # Evaluación en el conjunto de prueba
-        test_loss, test_acc = self.model.evaluate(X_test, y_test)
-        self.set_message(f"Precisión en datos de prueba: {test_acc:.4f}", 2)
+        # Evaluar el modelo
+        test_loss, test_accuracy = self.model.evaluate(X_test, y_test, verbose=0)
         y_pred = np.argmax(self.model.predict(X_test), axis=-1)
         
         # Guardar métricas
         self.metrics = {
-            'accuracy': test_acc,
+            'accuracy': test_accuracy,
             'val_accuracy': max(history.history['val_accuracy']),
             'training_time': training_time,
             'confusion_matrix': confusion_matrix(y_test, y_pred),
@@ -350,16 +337,16 @@ class HandGestureRecognition:
             pickle.dump(self.label_encoder, f)
         
         self.is_trained = True
-        self.set_message(f"Modelo entrenado. Precisión: {test_acc:.2f}", 3)
+        self.set_message(f"Modelo entrenado. Precisión: {test_accuracy:.2f}", 3)
         
         # Imprimir reporte detallado
         print("\n--- Informe del Modelo ---")
-        print(f"Precisión en datos de prueba: {test_acc:.4f}")
+        print(f"Precisión en datos de prueba: {test_accuracy:.4f}")
         print(f"Tiempo de entrenamiento: {training_time:.2f} segundos")
         print("\nClasificación detallada:")
         print(self.metrics['report'])
         
-        return test_acc
+        return test_accuracy
     
     def load_model(self):
         """
@@ -428,54 +415,7 @@ class HandGestureRecognition:
         """
         return list(set(self.labels))
     
-    def compare_with_previous_model(self):
-        """
-        Compara el rendimiento con el modelo anterior (si existe).
-        """
-        prev_model_file = "hand_gesture_model_4.pkl"
-        
-        try:
-            # Intentar cargar el modelo anterior (RandomForest)
-            with open(prev_model_file, "rb") as f:
-                prev_model = pickle.load(f)
-                
-            # Preparar datos para comparar
-            X = np.array(self.data)
-            y = np.array(self.labels)
-            y_encoded = self.label_encoder.transform(y)
-            
-            # Dividir datos
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42, stratify=y
-            )
-            
-            # Evaluar el modelo anterior
-            y_pred_prev = prev_model.predict(X_test)
-            acc_prev = accuracy_score(y_test, y_pred_prev)
-            
-            # Evaluar el nuevo modelo
-            X_test_scaled = self.scaler.transform(X_test)
-            y_test_encoded = self.label_encoder.transform(y_test)
-            _, acc_new = self.model.evaluate(X_test_scaled, y_test_encoded, verbose=0)
-            
-            improvement = (acc_new - acc_prev) * 100
-            
-            print("\n--- Comparación de Modelos ---")
-            print(f"Precisión del modelo anterior (RandomForest): {acc_prev:.4f}")
-            print(f"Precisión del nuevo modelo (Neural Network): {acc_new:.4f}")
-            print(f"Mejora: {improvement:.2f}%")
-            
-            self.set_message(f"Mejora del {improvement:.1f}% respecto al modelo anterior", 3)
-            
-            return {
-                'prev_accuracy': acc_prev,
-                'new_accuracy': acc_new,
-                'improvement': improvement
-            }
-        except:
-            self.set_message("No se pudo comparar con modelo anterior", 2)
-            return None
-
+    
     def run(self):
         """
         Ejecuta el sistema completo con una interfaz gráfica.
@@ -601,10 +541,6 @@ class HandGestureRecognition:
             elif key == ord('t') and not self.is_collecting:
                 self.train_model()
                 
-            # C para comparar modelos
-            elif key == ord('c') and self.is_trained:
-                self.compare_with_previous_model()
-        
         # Liberar recursos
         cap.release()
         cv2.destroyAllWindows()
@@ -614,37 +550,3 @@ if __name__ == "__main__":
     # Crear y ejecutar el sistema
     hand_gesture_system = HandGestureRecognition()
     hand_gesture_system.run()
-
-"""mismo que _3 solo que con el modelo de CNN + LSTM
-
-Principales mejoras y ajustes
-Adaptación a datos secuenciales:
-
-Antes, el modelo esperaba un vector plano de características.
-Ahora, espera una secuencia de sequence_length frames con total_landmarks características cada uno.
-Se realiza una transformación en train_model() para asegurarlo.
-Uso de one-hot encoding:
-
-sparse_categorical_crossentropy → categorical_crossentropy, por lo que y debe transformarse con to_categorical().
-Normalización adecuada:
-
-La normalización se hace por cada frame dentro de una secuencia en lugar de por feature individual.
-Mayor capacidad de generalización:
-
-Se agregan capas CNN para extraer características espaciales.
-Se conservan LSTM para capturar dependencias temporales.
-Se usa Dropout(0.5) para reducir sobreajuste.
-Próximos pasos
-Validar la forma de los datos:
-
-Antes de entrenar, imprimir X.shape y y.shape para confirmar dimensiones correctas.
-Asegurar que los datos de entrada son secuencias:
-
-X.reshape(num_samples, sequence_length, total_landmarks).
-Si tienes datos en otro formato, adapta el código.
-Revisar la normalización:
-
-Dependiendo de cómo almacenes los datos de landmarks, podría ser mejor usar MinMaxScaler en lugar de StandardScaler.
-Ajustar hiperparámetros si es necesario:
-
-Prueba cambiar el sequence_length, learning_rate o batch_size."""
