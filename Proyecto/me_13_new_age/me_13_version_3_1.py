@@ -130,7 +130,7 @@ class HandGestureRecognition:
         self.is_collecting = True
         self.current_gesture = gesture_name
         self.samples_collected = 0
-        self.set_message(f"Mantenga la seña frente a la cámara. Recolectando '{gesture_name}'...", 3)
+        self.set_message(f"Mantenga la seña frente a la cámara. Recolectando '{gesture_name}'...", 3) 
     
     def stop_collection(self):
         """
