@@ -48,8 +48,8 @@ def track_hand():
                             # Obtener coordenadas de la palma (punto medio entre la base del pulgar y el meñique)
                             wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
                             
-                            # Mapear coordenadas de la palma a un rango de -5 a 5
-                            x_normalized = int((wrist.x - 0.5) * 10)
+                            # Mapear coordenadas de la palma a un rango de -7.5 a 7.5
+                            x_normalized = int((wrist.x - 0.5) * 15)
                             
                             # Enviar comando a la Raspberry Pi
                             send_sock.sendto(str(x_normalized).encode(), (RASPBERRY_IP, SEND_PORT))
