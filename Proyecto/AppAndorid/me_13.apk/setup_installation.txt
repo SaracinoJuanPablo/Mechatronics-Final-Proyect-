@@ -1,0 +1,27 @@
+# Install Buildozer and its dependencies
+pip install buildozer
+pip install kivy
+pip install opencv-python
+pip install numpy
+pip install mediapipe
+pip install tensorflow
+pip install pyttsx3
+
+# If on Linux, you'll need additional system dependencies
+# For Ubuntu/Debian:
+sudo apt-get install -y \
+    python3-pip \
+    build-essential \
+    git \
+    python3 \
+    python3-dev \
+    libssl-dev \
+    libffi-dev \
+    autoconf \
+    libtool \
+    pkg-config \
+    zlib1g-dev \
+    libncurses5-dev \
+    libncursesw5-dev \
+    libtinfo5 \
+    cmake
