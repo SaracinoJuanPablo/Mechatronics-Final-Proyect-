@@ -4,26 +4,20 @@ import socket
 import threading
 import queue
 import librosa
-#from transformers import pipeline
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
 # Configuración
-#DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 SAMPLE_RATE_IN = 48000  # Tasa del micrófono INMP441
 SAMPLE_RATE_OUT = 16000  # Tasa requerida por Whisper
-BUFFER_DURATION = 10  # segundos
-PI_IP = "192.168.7.2"  # IP de la Raspberry Pi
-
-'''# Configurar pipeline de Whisper
-pipe = pipeline(
-    "automatic-speech-recognition",
-    model="openai/whisper-large-v3",
-    device=DEVICE,
-)'''
+BUFFER_DURATION = 5  # segundos
+UDP_IP_PI = "192.168.7.2"  # IP de la Raspberry Pi
+UDP_PORT_AUDIO = 5006
+UDP_PORT_TEXT = 5005
 
 # Configuración Whisper
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model_id = "openai/whisper-large-v3"
+#model_id = "openai/whisper-large-v3"
+model_id = "openai/whisper-medium"
 
 model = AutoModelForSpeechSeq2Seq.from_pretrained(
     model_id, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
@@ -45,7 +39,7 @@ audio_queue = queue.Queue()
 
 def recibir_audio():
     sock_audio = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock_audio.bind(("0.0.0.0", 5006))
+    sock_audio.bind(("0.0.0.0", UDP_PORT_AUDIO))
     
     buffer = bytearray()
     bytes_needed = SAMPLE_RATE_IN * 4 * BUFFER_DURATION  # 4 bytes por muestra (32-bit)
@@ -55,7 +49,7 @@ def recibir_audio():
         buffer.extend(data)
         
         while len(buffer) >= bytes_needed:
-            # Extraer 10 segundos de audio
+            # Extraer 5 segundos de audio
             chunk = bytes(buffer[:bytes_needed])
             del buffer[:bytes_needed]
             
@@ -84,7 +78,7 @@ def procesar_audio():
         
         # Enviar transcripción
         print("Transcripción:", result["text"])
-        sock.sendto(result["text"].encode(), (PI_IP, 5005))
+        sock.sendto(result["text"].encode(), (UDP_IP_PI, UDP_PORT_TEXT))
 
 # Iniciar servicios
 threading.Thread(target=recibir_audio, daemon=True).start()
