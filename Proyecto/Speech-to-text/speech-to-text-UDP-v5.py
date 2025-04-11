@@ -17,21 +17,41 @@ UDP_PORT_TEXT = 5005
 # Configuración Whisper
 device = "cuda" if torch.cuda.is_available() else "cpu"
 #model_id = "openai/whisper-large-v3"
-#model_id = "openai/whisper-medium"
-model_id = "openai/whisper-tiny"
+model_id = "openai/whisper-medium"
+#model_id = "openai/whisper-tiny"
 
 model = AutoModelForSpeechSeq2Seq.from_pretrained(
-    model_id, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
-).to(device)
+    model_id,
+    torch_dtype=torch.float32,
+    device_map="auto",
+    low_cpu_mem_usage=True  # ← Clave para CPU
+)
 
 processor = AutoProcessor.from_pretrained(model_id)
+
+'''pipe = pipeline(
+    "automatic-speech-recognition",
+    model=model,
+    tokenizer=processor.tokenizer,
+    feature_extractor=processor.feature_extractor,
+    device=device,
+)'''
 
 pipe = pipeline(
     "automatic-speech-recognition",
     model=model,
     tokenizer=processor.tokenizer,
     feature_extractor=processor.feature_extractor,
-    device=device,
+    #device=device,
+    #torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+    #batch_size=1,  # Reducir batch size a 1 para CPU
+    generate_kwargs={
+        "language": "spanish",
+        "task": "transcribe",
+        "max_new_tokens": 128,  # Limitar tokens máximos
+        "num_beams": 1
+    },
+    chunk_length_s=30  # Ajustar según tu buffer
 )
 
 # Configuración UDP
