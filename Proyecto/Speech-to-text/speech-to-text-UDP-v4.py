@@ -17,7 +17,8 @@ UDP_PORT_TEXT = 5005
 # Configuración Whisper
 device = "cuda" if torch.cuda.is_available() else "cpu"
 #model_id = "openai/whisper-large-v3"
-model_id = "openai/whisper-medium"
+#model_id = "openai/whisper-medium"
+model_id = "openai/whisper-tiny"
 
 model = AutoModelForSpeechSeq2Seq.from_pretrained(
     model_id, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
