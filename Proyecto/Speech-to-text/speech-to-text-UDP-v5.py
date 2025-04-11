@@ -46,13 +46,14 @@ pipe = pipeline(
     model=model,
     tokenizer=processor.tokenizer,
     feature_extractor=processor.feature_extractor,
-    device=device,
-    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-    batch_size=1,  # Reducir batch size a 1 para CPU
+    #device=device,
+    #torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+    #batch_size=1,  # Reducir batch size a 1 para CPU
     generate_kwargs={
         "language": "spanish",
         "task": "transcribe",
-        "max_new_tokens": 128  # Limitar tokens máximos
+        "max_new_tokens": 128,  # Limitar tokens máximos
+        "num_beams": 1
     },
     chunk_length_s=30  # Ajustar según tu buffer
 )
