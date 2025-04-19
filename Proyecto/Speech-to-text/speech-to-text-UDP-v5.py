@@ -20,6 +20,10 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model_id = "openai/whisper-medium"
 #model_id = "openai/whisper-tiny"
 
+'''model = AutoModelForSpeechSeq2Seq.from_pretrained(
+    model_id, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+).to(device)'''
+
 model = AutoModelForSpeechSeq2Seq.from_pretrained(
     model_id,
     torch_dtype=torch.float32,
@@ -51,7 +55,7 @@ pipe = pipeline(
         "max_new_tokens": 128,  # Limitar tokens máximos
         "num_beams": 1
     },
-    chunk_length_s=30  # Ajustar según tu buffer
+    chunk_length_s=1024  # Ajustar según tu buffer
 )
 
 # Configuración UDP
