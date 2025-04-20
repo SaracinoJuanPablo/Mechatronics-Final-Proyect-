@@ -11,7 +11,7 @@ import wave
 # Configuración
 SAMPLE_RATE_IN = 48000  # Tasa del micrófono INMP441
 SAMPLE_RATE_OUT = 16000  # Tasa requerida por la API de reconocimiento
-BUFFER_DURATION = 5  # segundos
+BUFFER_DURATION = 3  # segundos
 UDP_IP_PI = "192.168.7.2"  # IP de la Raspberry Pi
 UDP_PORT_AUDIO = 5006
 UDP_PORT_TEXT = 5005
