@@ -1,0 +1,4 @@
+# Requisitos para speech-to-text-free-UDP-v1.py
+numpy>=1.24.3
+librosa>=0.10.0
+SpeechRecognition>=3.10.0
