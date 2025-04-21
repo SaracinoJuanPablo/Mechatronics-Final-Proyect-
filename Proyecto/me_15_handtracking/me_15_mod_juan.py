@@ -413,6 +413,7 @@ def stop_collection():
     samples_collected = 0
     set_message("Recolección finalizada", 2)
 
+
 def collect_sample(landmarks):
     global is_collecting, samples_collected, last_sample_time, data, labels
     
