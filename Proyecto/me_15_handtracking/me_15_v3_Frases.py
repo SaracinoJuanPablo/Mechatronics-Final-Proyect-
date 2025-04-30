@@ -1,3 +1,5 @@
+# ------------- PROYECTO FINAL G & S--------------------
+## LIBRERIAS
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -16,72 +18,59 @@ from sklearn.metrics import accuracy_score, confusion_matrix, classification_rep
 
 # Comunicación y cámara
 import socket
-import threading
 import queue
 
 # Voz
 import pyttsx3
 import threading
+
 # Módulos para reconocimiento de voz
 import speech_recognition as sr
 import librosa
 import io
 import wave
 
-# Inicializa el motor de texto-a-voz de pyttsx3
-tts_engine = pyttsx3.init()  # Crea una instancia del motor TTS
-tts_engine.setProperty('rate', 150)  # Velocidad del habla (opcional)
+# Módulo de filtrado contextual
+from context_filter import ContextFilter
 
-# Crea un objeto de bloqueo para sincronización de hilos
-tts_lock = threading.Lock()  # Previene acceso concurrente al motor TTS
-
-# Variable global para almacenar la última seña vocalizada
-last_spoken_gesture = None  # Guarda el texto del último gesto reproducido
-
-# Lógica de prevención de repeticiones 
-def speak_text(text):
-    global last_spoken_gesture  # Accede a la variable global
-    
-    # Bloquea el acceso concurrente usando with para manejo seguro del recurso
-    with tts_lock:  # Asegura que solo un hilo use el motor TTS a la vez
-        
-        # Verifica si el texto es diferente al último reproducido
-        if text != last_spoken_gesture:  # Evita repeticiones consecutivas
-            
-            # Actualiza el registro del último gesto vocalizado
-            last_spoken_gesture = text  # Almacena el nuevo texto
-            
-            # Añade el texto a la cola de reproducción
-            tts_engine.say(text)  # Programa la reproducción del texto
-            
-            # Ejecuta la reproducción y espera a que termine
-            tts_engine.runAndWait()  # Bloquea hasta terminar la reproducción
-
+## UDP
 # Configuración para el reconocimiento de voz
 SAMPLE_RATE_IN = 48000  # Tasa del micrófono INMP441
 SAMPLE_RATE_OUT = 16000  # Tasa requerida por la API de reconocimiento
 BUFFER_DURATION = 5  # segundos
-UDP_IP_PI = "192.168.7.2"  # IP de la Raspberry Pi
-UDP_PORT_AUDIO = 5006
-UDP_PORT_TEXT = 5005
 
+
+UDP_IP_PI = "192.168.7.2"  # IP de la Raspberry Pi
+UDP_OPEN = '0.0.0.0'
+
+# Puertos para diferentes servicios
+UDP_PORT_MICROFONO = 5006
+UDP_PORT_TEXT = 5005
+UDP_PORT_SERVO = 5001  # Puerto para enviar comandos
+UDP_PORT_PARLANTE = 5003
+UDP_PORT_CAM = 5002  # Puerto para recibir video
+MAX_PACKET_SIZE = 1400  # Tamaño máximo del paquete UDP
+
+
+## VOZ A PANTALLA
+### RECONOCEDOR DE VOZ
 # Inicializar el reconocedor de voz
 recognizer = sr.Recognizer()
 
 # Configuración UDP para voz
 sock_voice = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-audio_queue = queue.Queue()
+microfono_queue = queue.Queue()
 
 # Variable para controlar el servicio de reconocimiento de voz
-speech_recognition_running = True
+speech_recognition_running = True #VA EN EL WHILE.
 
 # Variable para almacenar la última transcripción
-last_transcription = ""
+last_transcription = "" #NO ESTAN EN SPEECH-TO-TEXT-FREE-UDP-V1.PY
 
 def recibir_audio():
     sock_audio = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock_audio.bind(("0.0.0.0", UDP_PORT_AUDIO))
+        sock_audio.bind(("0.0.0.0", UDP_PORT_MICROFONO))
         
         buffer = bytearray()
         bytes_needed = SAMPLE_RATE_IN * 4 * BUFFER_DURATION  # 4 bytes por muestra (32-bit)
@@ -118,17 +107,18 @@ def recibir_audio():
                     wav_file.writeframes(audio_int16.tobytes())
                 
                 wav_buffer.seek(0)  # Rebobinar el buffer
-                audio_queue.put(wav_buffer)
+                microfono_queue.put(wav_buffer)
     except Exception as e:
         print(f"Error en recibir_audio: {e}")
-    finally:
-        sock_audio.close()
-
+    #NO ESTAN EN SPEECH-TO-TEXT-FREE-UDP-V1.PY  ver de comentarlo
+    finally: 
+        sock_audio.close() 
+### PROCESAR AUDIO
 def procesar_audio():
-    global last_transcription
+    global last_transcription #NO ESTAN EN SPEECH-TO-TEXT-FREE-UDP-V1.PY
     while speech_recognition_running:
         try:
-            wav_buffer = audio_queue.get(timeout=1)
+            wav_buffer = microfono_queue.get(timeout=1)
             
             # Crear un objeto AudioData desde el buffer WAV
             with sr.AudioFile(wav_buffer) as source:
@@ -138,7 +128,7 @@ def procesar_audio():
             transcription = recognizer.recognize_google(audio_data, language="es-ES")
             
             print(f"Transcripción: {transcription}")
-            last_transcription = transcription
+            last_transcription = transcription #NO ESTAN EN SPEECH-TO-TEXT-FREE-UDP-V1.PY
             
             # Enviar transcripción por UDP si es necesario
             sock_voice.sendto(transcription.encode(), (UDP_IP_PI, UDP_PORT_TEXT))
@@ -151,7 +141,7 @@ def procesar_audio():
             print(f"Error en la solicitud a la API de Google: {e}")
         except Exception as e:
             print(f"Error en la transcripción: {e}")
-
+### ACTIVACION DE RECONOCIMIENTO DE VOZ
 # Función para iniciar el servicio de reconocimiento de voz
 def start_speech_recognition():
     global speech_recognition_running
@@ -166,14 +156,92 @@ def start_speech_recognition():
     
     print("Servicio de reconocimiento de voz iniciado...")
     return audio_thread, process_thread
-
+### DETENCION DE RECONOCIMIENTO DE VOZ
 # Función para detener el servicio de reconocimiento de voz
 def stop_speech_recognition():
     global speech_recognition_running
     speech_recognition_running = False
     sock_voice.close()
     print("Servicio de reconocimiento de voz detenido.")
+## CAMARA
+### MOTOR TEXTO-VOZ
+# Inicializa el socket UDP (compartido para todos los hilos)
+udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
+# Inicializa el motor TTS
+tts_engine = pyttsx3.init()
+tts_engine.setProperty('rate', 150)
+
+# Objeto de bloqueo para sincronización
+tts_lock = threading.Lock()
+
+# Variable global para última reproducción
+last_spoken_gesture = None
+
+def speak_text(text):
+    global last_spoken_gesture, udp_socket
+
+    if not hasattr(speak_text, 'queue'):
+        speak_text.queue = []
+        speak_text.processing = False
+        speak_text.thread = None
+        speak_text.event = threading.Event()  # Nuevo evento para sincronización
+        speak_text.current_audio = None  # Bandera de audio en transmisión
+
+    # Evitar duplicados y agregar a cola
+    if text != last_spoken_gesture and text not in speak_text.queue:
+        speak_text.queue.append(text)
+        last_spoken_gesture = text
+
+    def _process_queue():
+        while speak_text.queue or speak_text.current_audio:
+            # Esperar si hay audio en curso
+            if speak_text.current_audio:
+                time.sleep(0.1)
+                continue
+
+            # Bloquear mientras se procesa
+            with tts_lock:
+                if speak_text.queue:
+                    speak_text.current_audio = speak_text.queue.pop(0)
+                    
+                    try:
+                        # Generar audio
+                        temp_file = "temp_audio.wav"
+                        tts_engine.save_to_file(speak_text.current_audio, temp_file)
+                        tts_engine.runAndWait()
+
+                        # Calcular tiempo de audio aproximado
+                        audio_duration = len(open(temp_file, 'rb').read()) / (16000 * 2)  # 16KHz, 16bits
+                        
+                        # Enviar por UDP
+                        with open(temp_file, 'rb') as f:
+                            audio_data = f.read()
+                            total_chunks = (len(audio_data) + MAX_PACKET_SIZE - 1) // MAX_PACKET_SIZE
+                            for i in range(total_chunks):
+                                chunk = audio_data[i*MAX_PACKET_SIZE:(i+1)*MAX_PACKET_SIZE]
+                                udp_socket.sendto(chunk, (UDP_IP_PI, UDP_PORT_PARLANTE))
+                                time.sleep(0.001)
+
+                        print(f"Audio enviado: {speak_text.current_audio}")
+                        
+                        # Esperar tiempo estimado de reproducción
+                        time.sleep(audio_duration * 0.8)  # Margen de seguridad
+
+                    except Exception as e:
+                        print(f"Error: {str(e)}")
+                    finally:
+                        speak_text.current_audio = None
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+
+        speak_text.processing = False
+
+    if not speak_text.processing:
+        speak_text.processing = True
+        speak_text.thread = threading.Thread(target=_process_queue, daemon=True)
+        speak_text.thread.start()
+### MEDIAPIPE
 # Inicializar MediaPipe
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
@@ -183,13 +251,7 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.5 #probar con 0.4
 )
 mp_drawing = mp.solutions.drawing_utils
-
-# Configuración del socket UDP
-UDP_IP_PI = "192.168.7.2" # Dirección IP de tu Raspberry Pi
-UDP_OPEN = '0.0.0.0'
-UDP_PORT_SERVO = 5001  # Puerto para enviar comandos
-UDP_PORT_CAM = 5002  # Puerto para recibir video
-
+### COMUNICACION CAMARA
 class UDPCamera:
     def __init__(self):
         self.host = UDP_OPEN
@@ -294,7 +356,7 @@ class UDPCamera:
 
     def __del__(self):
         self.release()
-
+### MODELO TFLITE
 class TFLiteModel:
     def __init__(self, model_path):
         # Cargar el modelo TFLite
@@ -319,8 +381,31 @@ class TFLiteModel:
         output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
         return output_data
 
+# Configuración de TensorFlow para rendimiento
+physical_devices = tf.config.list_physical_devices('GPU')
+if physical_devices:
+    # Configuración de TensorFlow para rendimiento en CPU
+    try:
+        # Verificar si hay GPU disponible (para futuras expansiones)
+        physical_devices = tf.config.list_physical_devices('GPU')
+        
+        if physical_devices:
+            # Configuración para GPU (no se ejecutará en tu caso)
+            for device in physical_devices:
+                tf.config.experimental.set_memory_growth(device, True)
+            print("GPU disponible para aceleración")
+        else:
+            # Optimización para CPU
+            tf.config.threading.set_intra_op_parallelism_threads(4)  # Aprovecha núcleos físicos
+            tf.config.threading.set_inter_op_parallelism_threads(2)  # Paralelismo entre operaciones
+            print("Modo CPU activado: Configuración optimizada para Intel Core i7-7500U")
+            
+    except Exception as e:
+        print(f"Error de configuración: {str(e)}")
+        print("Usando configuración por defecto de CPU")
+### ARCHIVOS
 # Configuración de directorios y archivos
-data_dir = "hand_gestures_data_5_2"
+data_dir = "hand_gestures_data_v15"
 os.makedirs(data_dir, exist_ok=True)
 
 # Modelo y datos de entrenamiento
@@ -328,11 +413,11 @@ model = None
 # Inicializar scaler y label encoder
 scaler = StandardScaler()
 label_encoder = LabelEncoder()
-model_file = "hand_gesture_nn_model_5_2.h5"
-scaler_file = "hand_gesture_scaler_5_2.pkl"
-encoder_file = "hand_gesture_encoder_5_2.pkl"
-gesture_data = "gesture_data_5_2.pkl" 
-model_tflite = "modelo_optimizadotl_5_2.tflite"
+model_file = "hand_gesture_nn_model_v15.h5"
+scaler_file = "hand_gesture_scaler_v15.pkl"
+encoder_file = "hand_gesture_encoder_v15.pkl"
+gesture_data = "gesture_data_v15.pkl" 
+model_tflite = "modelo_optimizadotl_v15.tflite"
 
 # Variables globales para estado
 data = []
@@ -343,7 +428,7 @@ is_trained = False
 is_collecting = False
 current_gesture = ""
 samples_collected = 0
-max_samples = 100
+max_samples = 5000
 
 # Control de tiempo para la recolección continua
 last_sample_time = 0
@@ -359,7 +444,7 @@ metrics = {
     'val_accuracy': 0,
     'training_time': 0
 }
-
+### EXTRACCION DE LANDMARKS
 def extract_hand_landmarks(frame):
     """
     Extrae los landmarks de las manos desde un frame de video.
@@ -399,12 +484,17 @@ def extract_hand_landmarks(frame):
     
     return landmarks_data, hands_detected
 
+def set_message(message_text, duration=2):
+    global message, message_until
+    message = message_text
+    message_until = time.time() + duration
+### RECOLECCION
 def start_collection(gesture_name):
     global is_collecting, current_gesture, samples_collected
     is_collecting = True
     current_gesture = gesture_name
     samples_collected = 0
-    set_message(f"Recolectando '{gesture_name}'...", 3)
+    set_message(f"Mantenga la seña frente a la cámara. Recolectando '{gesture_name}'...", 3)
 
 def stop_collection():
     global is_collecting, current_gesture, samples_collected
@@ -412,8 +502,14 @@ def stop_collection():
     current_gesture = ""
     samples_collected = 0
     set_message("Recolección finalizada", 2)
-
-
+### GUARDADO DE DATOS
+def save_data():
+    global data, labels
+    data_to_save = {"features": data, "labels": labels}
+    with open(f"{data_dir}/{gesture_data}", "wb") as f:
+        pickle.dump(data_to_save, f)
+    set_message(f"Datos guardados: {len(data)} muestras", 1)
+### RECOLECCION DE MUESTRAS
 def collect_sample(landmarks):
     global is_collecting, samples_collected, last_sample_time, data, labels
     
@@ -435,19 +531,7 @@ def collect_sample(landmarks):
             return True
     
     return False
-
-def set_message(message_text, duration=2):
-    global message, message_until
-    message = message_text
-    message_until = time.time() + duration
-
-def save_data():
-    global data, labels
-    data_to_save = {"features": data, "labels": labels}
-    with open(f"{data_dir}/{gesture_data}", "wb") as f:
-        pickle.dump(data_to_save, f)
-    set_message(f"Datos guardados: {len(data)} muestras", 1)
-
+### CARGA DE DATOS
 def load_data():
     global data, labels
     try:
@@ -461,7 +545,7 @@ def load_data():
         print(f"Error al cargar datos: {e}")
         set_message("No se encontraron datos previos", 2)
         return False
-
+### RED NEURONAL
 def check_model_exists():
     return os.path.exists(model_file) and os.path.exists(scaler_file) and os.path.exists(encoder_file)
 
@@ -483,7 +567,7 @@ def create_neural_network(input_shape, num_classes):
     )
     
     return model
-
+### ENTRENAMIENTO
 def train_model():
     global model, scaler, label_encoder, metrics, is_trained
     
@@ -551,6 +635,7 @@ def train_model():
     
     return True
 
+### CARGA DEL MODELO ENTRENADO
 def load_saved_model():
     global scaler, label_encoder
     try:
@@ -566,6 +651,7 @@ def load_saved_model():
         set_message("Error al cargar el modelo", 2)
         return None
 
+### MODELO DE TFLITE
 def predict_tflite(landmarks, tflite_model, scaler, label_encoder, threshold=0.5):
     try:
         # Preprocesar los landmarks
@@ -589,6 +675,7 @@ def predict_tflite(landmarks, tflite_model, scaler, label_encoder, threshold=0.5
         print(f"Error en la predicción: {e}")
         return "Error", 0.0
 
+### CONVERSION A TFLITE
 def convert_to_tflite(model_file, model_tflite):
     try:
         if not os.path.exists(model_file):
@@ -608,7 +695,7 @@ def convert_to_tflite(model_file, model_tflite):
         print("Modelo convertido a TensorFlow Lite.")
     except Exception as e:
         print("Error al convertir el modelo a TFLite:", e)
-
+### MENU
 def print_menu():
     print("\n=== MENU PRINCIPAL ===")
     print("1. Recolectar nueva seña")
@@ -617,6 +704,7 @@ def print_menu():
     print("4. Evaluar en tiempo real")
     print("5. Salir")
 
+### LISTADO DE GESTOS
 def list_gestures():
     # Asumiendo que 'labels' es la lista donde se guardan las señas
     if not labels:
@@ -627,6 +715,7 @@ def list_gestures():
         for i, gesture in enumerate(unique_gestures, 1):
             print(f"{i}. {gesture}")
 
+### RECOLECCION DE SEÑAS
 def run_collection_mode():
     # Inicia la cámara
     try:
@@ -672,7 +761,111 @@ def run_collection_mode():
     
     cap.release()
     cv2.destroyAllWindows()
+### EVALUACION EN TIEMPO REAL
+def run_evaluation_mode():
+    global model_tflite
+    # Inicializa el modelo TFLite si aún no se ha cargado
+    if os.path.exists(model_tflite):
+        tflite_model = TFLiteModel(model_tflite)
+    else:
+        print("El modelo TFLite no existe. Conviértelo primero.")
+        return
 
+    # Inicia la cámara
+    try:
+        cap = UDPCamera()
+        print("Cámara UDP iniciada para evaluación en tiempo real.")
+    except Exception as e:
+        print(f"Error al iniciar la cámara: {str(e)}")
+        return
+    
+    # Inicializar el filtro contextual
+    context_filter = ContextFilter(pause_threshold=2.0, confidence_threshold=0.95)
+    last_prediction = None
+    last_prediction_time = 0
+    
+    # Variables para mostrar información en pantalla
+    display_message = ""
+    display_message_until = 0
+    
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            time.sleep(0.1)
+            continue
+
+        landmarks, hands_detected = extract_hand_landmarks(frame)
+        frame_h, frame_w, _ = frame.shape
+        current_time = time.time()
+
+        if hands_detected:
+            prediction, confidence = predict_tflite(landmarks, tflite_model, scaler, label_encoder, threshold=0.9)
+            color = (0, 255, 0) if confidence > 0.9 else (0, 165, 255)
+            cv2.putText(frame, f"Seña: {prediction}", (10, 50), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+            cv2.putText(frame, f"Confianza: {confidence:.2%}", (10, 90), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            
+            # Extraer valor escalar en caso de que 'confidence' sea un array
+            confidence_value = np.max(confidence) if isinstance(confidence, np.ndarray) else confidence
+
+            # Procesar la predicción solo si es diferente a la anterior o ha pasado suficiente tiempo
+            if (confidence_value > 0.95 and prediction != "Desconocido" and 
+                (prediction != last_prediction or current_time - last_prediction_time > 1.0)):
+                
+                # Aplicar filtro contextual
+                filter_result = context_filter.add_gesture(prediction, confidence_value, current_time)
+                
+                # Actualizar última predicción
+                last_prediction = prediction
+                last_prediction_time = current_time
+                
+                # Mostrar información sobre la relevancia contextual
+                if filter_result['is_relevant']:
+                    display_message = f"Seña '{prediction}' añadida a la oración"
+                    display_message_until = current_time + 2.0
+                else:
+                    display_message = f"Seña '{prediction}' filtrada (irrelevante en contexto)"
+                    display_message_until = current_time + 2.0
+                
+                # Reproducir oración si está lista
+                if filter_result['should_speak'] and filter_result['speech_text']:
+                    threading.Thread(target=speak_text, args=(filter_result['speech_text'],), daemon=True).start()
+        else:
+            cv2.putText(frame, "Acerca las manos a la cámara", (frame_w//4, frame_h//2), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        
+        # Mostrar mensaje de estado del filtro contextual
+        if current_time < display_message_until:
+            cv2.putText(frame, display_message, (10, frame_h - 70), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        
+        # Verificar si ha pasado mucho tiempo sin señas (más de 2 segundos)
+        if last_prediction_time > 0 and current_time - last_prediction_time > 2.0:
+            # Finalizar oración actual si existe
+            final_sentence = context_filter.force_finalize()
+            if final_sentence:
+                threading.Thread(target=speak_text, args=(final_sentence,), daemon=True).start()
+                display_message = f"Oración finalizada: {final_sentence}"
+                display_message_until = current_time + 3.0
+                last_prediction_time = current_time  # Reiniciar temporizador
+        
+        cv2.putText(frame, "Presiona ESC para volver al menú", (10, frame_h - 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        cv2.imshow("Evaluación en Tiempo Real", frame)
+        
+        key = cv2.waitKey(1)
+        if key == 27:  # ESC
+            # Finalizar oración pendiente antes de salir
+            final_sentence = context_filter.force_finalize()
+            if final_sentence:
+                threading.Thread(target=speak_text, args=(final_sentence,), daemon=True).start()
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+### FUNCION PRINCIPAL 
 def main():
     global model, is_trained, data, labels
 
@@ -744,154 +937,6 @@ def main():
         
         # Mostrar nuevamente el menú luego de finalizar la opción seleccionada.
         print_menu()
-
 if __name__ == "__main__":
     main()
     save_data()  # Guarda los datos recolectados
-
-def run_evaluation_mode():
-    global model_tflite
-    # Inicializa el modelo TFLite si aún no se ha cargado
-    if os.path.exists(model_tflite):
-        tflite_model = TFLiteModel(model_tflite)
-    else:
-        print("El modelo TFLite no existe. Conviértelo primero.")
-        return
-
-    # Inicia la cámara
-    try:
-        cap = UDPCamera()
-        print("Cámara UDP iniciada para evaluación en tiempo real.")
-    except Exception as e:
-        print(f"Error al iniciar la cámara: {str(e)}")
-        return
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.1)
-            continue
-
-        landmarks, hands_detected = extract_hand_landmarks(frame)
-        frame_h, frame_w, _ = frame.shape
-
-        if hands_detected:
-            prediction, confidence = predict_tflite(landmarks, tflite_model, scaler, label_encoder, threshold=0.9)
-            color = (0, 255, 0) if confidence > 0.9 else (0, 165, 255)
-            cv2.putText(frame, f"Seña: {prediction}", (10, 50), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
-            cv2.putText(frame, f"Confianza: {confidence:.2%}", (10, 90), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-            
-            # Extraer valor escalar en caso de que 'confidence' sea un array
-            confidence_value = np.max(confidence) if isinstance(confidence, np.ndarray) else confidence
-
-            if confidence_value > 0.99 and prediction != "Desconocido":
-                threading.Thread(target=speak_text, args=(prediction,), daemon=True).start()
-        else:
-            cv2.putText(frame, "Acerca las manos a la cámara", (frame_w//4, frame_h//2), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-        
-        # Mostrar la última transcripción de voz en la pantalla
-        if last_transcription:
-            cv2.putText(frame, f"Voz: {last_transcription}", (10, frame_h - 70), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
-        cv2.putText(frame, "Presiona ESC para volver al menú", (10, frame_h - 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        cv2.imshow("Evaluación en Tiempo Real", frame)
-        
-        key = cv2.waitKey(1)
-        if key == 27:  # ESC
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-def main():
-    global model, is_trained, data, labels
-
-    # Iniciar el servicio de reconocimiento de voz al iniciar el programa
-    print("Iniciando servicio de reconocimiento de voz...")
-    audio_thread, process_thread = start_speech_recognition()
-    
-    # Iniciar la cámara UDP y el bucle principal
-    camera = UDPCamera()
-    
-    while True:
-        ret, frame = camera.read()
-        if not ret:
-            break
-        
-        cv2.imshow('Frame', frame)
-        
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-    
-    # Detener el servicio de reconocimiento de voz
-    stop_speech_recognition()
-    
-    # Liberar recursos
-    camera.release()
-    cv2.destroyAllWindows()
-    
-    # Cargar datos existentes
-    load_data()
-    
-    # Intentar cargar modelo si existe
-    if check_model_exists():
-        model = load_saved_model()
-        is_trained = True
-    else:
-        is_trained = False
-
-    # Mostrar el menú en la consola
-    print_menu()
-
-    # Bucle principal de selección en consola
-    while True:
-        opcion = input("\nSelecciona una opción (Recolectar: 1, Entrenar: 2, Señas: 3, Evaluar: 4, Salir: 5): ").strip()
-        
-        if opcion == '1':
-            # Recolección de señas
-            gesture_name = input("Ingrese nombre de la seña (ej. 'Hola'): ")
-            if gesture_name:
-                start_collection(gesture_name)
-                # Iniciar la cámara para mostrar video durante la recolección
-                run_collection_mode()
-                
-        elif opcion == '2':
-            if len(data) > 10:
-                train_model()
-                model = load_saved_model() if check_model_exists() else None
-                is_trained = True
-                print("Entrenamiento completado. Modelo entrenado.")
-                convert_to_tflite(model_file, model_tflite)
-                print("Convertido a TFLite para evaluación en tiempo real")
-            else:
-                print("¡Necesitas al menos 10 muestras para entrenar!")
-                
-        elif opcion == '3':
-            list_gestures()  # Lista las señas cargadas
-
-        elif opcion == '4':
-            if is_trained:
-                # Inicializar modo evaluación en tiempo real
-                print("Modo de evaluación activado.")
-                run_evaluation_mode()
-            else:
-                print("¡Entrena el modelo primero (Opción 2)!")
-                
-        elif opcion == '5':
-            print("Deteniendo servicio de reconocimiento de voz...")
-            stop_speech_recognition()
-            print("Saliendo del programa...")
-            break
-        else:
-            print("Opción inválida, intenta nuevamente.")
-        
-        # Mostrar nuevamente el menú luego de finalizar la opción seleccionada.
-        print_menu()
-
-if __name__ == "__main__":
-    main()
