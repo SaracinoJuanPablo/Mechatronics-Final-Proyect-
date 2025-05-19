@@ -1,0 +1,90 @@
+Descripción general del proyecto
+Desarrollar unas gafas inteligentes equipadas con una cámara telescópica montada por fuera del marco, orientada hacia abajo para capturar el movimiento de las manos. El objetivo es reconocer en tiempo real los gestos de la lengua de señas mediante procesamiento de imágenes y machine learning, y convertirlos a voz para facilitar la comunicación entre personas sordas y oyentes.
+
+Componentes del sistema
+Gafas con cámara telescópica
+
+Cámara fija en el lateral del armazón, con lente de zoom para enfocar las manos.
+
+Montura robusta pero ligera para garantizar confort.
+
+Mecanismo de giro motorizado
+
+Motor paso a paso o servomotor acoplado a la cámara.
+
+Control de ángulo de inclinación y rotación en tiempo real.
+
+Feedback de posición para asegurar que la mano siempre permanezca en el campo de visión.
+
+Unidad de procesamiento embebido
+
+Microordenador o módulo de IA (por ejemplo, Raspberry Pi, NVIDIA Jetson).
+
+Interfaz con la cámara y el motor.
+
+Altavoz incorporado para salida de audio.
+
+Fase de recolección de datos (entrenamiento)
+Captura de vídeo
+
+Secuencia de frames con la mano realizando señas.
+
+El motor ajusta el encuadre dinámicamente para mantener la mano centrada.
+
+Extracción de landmarks
+
+Uso de una librería de visión (MediaPipe, OpenCV con detección de manos) para identificar puntos clave (joints) de la mano en cada frame.
+
+Almacenamiento de la secuencia temporal de landmarks.
+
+Preprocesamiento
+
+Filtrado y normalización de coordenadas.
+
+Posible suavizado de la trayectoria y eliminación de frames redundantes.
+
+Entrenamiento del modelo
+
+Conjunto de datos etiquetado: cada secuencia de landmarks corresponde a una seña (por ejemplo, “HOLA”).
+
+Arquitectura de red: LSTM, CNN-Transformer, u otra que maneje secuencias temporales.
+
+Validación y ajuste de hiperparámetros.
+
+Fase de inferencia en tiempo real
+Adquisición de frames
+
+La cámara captura continuamente la mano mientras el usuario hace una seña.
+
+El motor sigue la posición de la mano para mantener un encuadre óptimo.
+
+Detección de landmarks y preprocesamiento
+
+Extracción instantánea de puntos clave y normalización igual que en entrenamiento.
+
+Clasificación de la seña
+
+El modelo previamente entrenado recibe la secuencia de landmarks y devuelve la etiqueta de la seña reconocida.
+
+Salida de voz
+
+Conversión de la etiqueta a audio mediante un módulo TTS (Text-to-Speech).
+
+Reproducción inmediata por el altavoz incorporado.
+
+Ejemplo de flujo completo
+Entrenamiento
+
+Grabo múltiples secuencias de la seña “HOLA”.
+
+Extraigo landmarks, entreno y evalúo el modelo hasta obtener buena precisión.
+
+Uso real
+
+Me pongo las gafas. La cámara y el motor siguen mis manos.
+
+Hago la seña “HOLA”.
+
+El sistema reconoce “HOLA” y lo reproduce en voz alta:
+
+“HOLA”

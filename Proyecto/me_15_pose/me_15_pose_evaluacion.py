@@ -247,16 +247,16 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
-    min_detection_confidence=0.5, #probar con 0.4
-    min_tracking_confidence=0.5 #probar con 0.4
+    min_detection_confidence=0.6, # Aumentado para reducir detecciones erróneas
+    min_tracking_confidence=0.6 # Aumentado para reducir detecciones erróneas
 )
 # Inicializar MediaPipe Pose
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(
     static_image_mode=False,
     model_complexity=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    min_detection_confidence=0.6, # Aumentado para reducir detecciones erróneas
+    min_tracking_confidence=0.6 # Aumentado para reducir detecciones erróneas
 )
 mp_drawing = mp.solutions.drawing_utils
 ### COMUNICACION CAMARA
@@ -421,7 +421,7 @@ def extract_hand_pose_landmarks(frame, send_sock=None):
     """
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     
-    # Procesar manos
+    # Procesar manos con parámetros optimizados
     hands_results = hands.process(frame_rgb)
     
     # Procesar pose
@@ -435,13 +435,22 @@ def extract_hand_pose_landmarks(frame, send_sock=None):
     x_normalized = None
     right_wrist_pixel = None
     
+    # Umbral para banda muerta (ignorar pequeños movimientos)
+    dead_band_threshold = 2  # Banda muerta de ±2°
+    
     # Extraer landmarks de manos
     if hands_results.multi_hand_landmarks:
         hands_detected = True
         # Procesar ambas manos para landmarks
         for hand_idx, hand_landmarks in enumerate(hands_results.multi_hand_landmarks):
             # Dibujar landmarks
-            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            mp_drawing.draw_landmarks(
+                frame, 
+                hand_landmarks, 
+                mp_hands.HAND_CONNECTIONS,
+                mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
+                mp_drawing.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=1)
+            )
             
             # Extraer coordenadas
             landmarks = []
@@ -452,27 +461,44 @@ def extract_hand_pose_landmarks(frame, send_sock=None):
             # Detectar mano derecha para seguimiento
             if hands_results.multi_handedness:
                 handedness = hands_results.multi_handedness[hand_idx]
-                if handedness.classification[0].label == 'Left' and not x_normalized:
+                if handedness.classification[0].label == 'Left':  # Cambiado a 'Left' para seguimiento
                     wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
                     
-                    # Calcular coordenadas normalizadas
+                    # Calcular coordenadas normalizadas con mejor precisión
                     x_normalized = int((wrist.x - 0.5) * 15)  # Rango -7.5 a 7.5
-                    print(x_normalized)
                     
                     # Obtener coordenadas para dibujo
                     right_wrist_pixel = mp_drawing._normalized_to_pixel_coordinates(
                         wrist.x, wrist.y, frame.shape[1], frame.shape[0]
                     )
+                    
+                    # Dibujar punto de seguimiento
+                    if right_wrist_pixel:
+                        cv2.circle(frame, right_wrist_pixel, 10, (0, 255, 0), -1)
+                        cv2.putText(frame, f"X: {x_normalized}", 
+                                  (right_wrist_pixel[0] + 15, right_wrist_pixel[1]),
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
         # Enviar datos y dibujar si se detectó mano derecha
-        if x_normalized is not None:
-            if send_sock:  # Solo enviar si se provee socket
+        if x_normalized is not None and send_sock:
+            # Aplicar banda muerta: ignorar pequeños movimientos
+            if abs(x_normalized) >= dead_band_threshold:
+                # Enviar ángulo como cadena de texto (por ejemplo, "+7" o "-3")
+                angle_command = f"{x_normalized:+d}"
                 send_sock.sendto(
-                    str(x_normalized).encode(),
-                    (UDP_IP_PI, UDP_PORT_SERVO)  # Asegurar que estas constantes están definidas
+                    angle_command.encode(),
+                    (UDP_IP_PI, UDP_PORT_SERVO)
                 )
-            if right_wrist_pixel:
-                cv2.circle(frame, right_wrist_pixel, 10, (0, 255, 0), -1)
+                print(f"Enviando comando de ángulo: {angle_command}")
+            else:
+                # Enviar comando de detención cuando el movimiento es pequeño
+                send_sock.sendto(b"STOP_SERVO", (UDP_IP_PI, UDP_PORT_SERVO))
+                print("Enviando comando STOP_SERVO (movimiento pequeño)")
+    
+    # Enviar mensaje de detención cuando no hay manos detectadas
+    elif send_sock:
+        send_sock.sendto(b"STOP_SERVO", (UDP_IP_PI, UDP_PORT_SERVO))
+        print("Enviando comando STOP_SERVO (no hay manos detectadas)")
     
     # Rellenar con ceros si no hay manos
     while len(hand_landmarks_data) < 21 * 3 * 2:  # 21 landmarks * 3 coordenadas * 2 manos
@@ -636,11 +662,43 @@ def run_evaluation_mode():
     try:
         cap = UDPCamera()
         print("Cámara UDP iniciada para evaluación en tiempo real.")
+        
+        # Inicialización del motor
+        print("Iniciando secuencia de activación del motor...")
+        try:
+            # Secuencia de inicialización con reintentos
+            max_retries = 3
+            for attempt in range(max_retries):
+                print(f"Intento {attempt + 1} de activación del servo...")
+                send_sock.sendto(b"START_SERVO", (UDP_IP_PI, UDP_PORT_SERVO))
+                
+                # Esperar respuesta
+                send_sock.settimeout(1.0)
+                try:
+                    response, _ = send_sock.recvfrom(1024)
+                    if response == b"OK":
+                        print("Servo activado correctamente")
+                        break
+                    else:
+                        print(f"Error en respuesta del servo: {response}")
+                except socket.timeout:
+                    print("Timeout esperando respuesta del servo")
+                
+                if attempt < max_retries - 1:
+                    time.sleep(0.5)
+            
+            # Configurar modo idle
+            send_sock.sendto(b"IDLE_SERVO", (UDP_IP_PI, UDP_PORT_SERVO))
+            time.sleep(0.5)
+            
+        except Exception as e:
+            print(f"Error al inicializar el servo: {str(e)}")
+            return
+            
     except Exception as e:
         print(f"Error al iniciar la cámara: {str(e)}")
         return
     
-    #NUEVO BARRITA DE PROGRESO
     # Variables para el sistema de confirmación de señas
     consecutive_frames = 0
     last_prediction = ""
@@ -653,96 +711,162 @@ def run_evaluation_mode():
     
     # Umbral de confianza para considerar una detección válida
     confidence_threshold = 0.9
-
     
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            time.sleep(0.1)
-            continue
-
-        landmarks, hands_detected, pose_detected = extract_hand_pose_landmarks(frame, send_sock)
-        frame_h, frame_w, _ = frame.shape
-
-        # Mostrar información de detección
-        detection_info = []
-        if hands_detected:
-            detection_info.append("Manos")
-        if pose_detected:
-            detection_info.append("Pose")
-            
-        detection_text = ", ".join(detection_info) if detection_info else "Nada detectado"
-        cv2.putText(frame, f"Detectado: {detection_text}", (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-        #NUEVO BARRITA DE PROGRESO
-        # Mostrar información de detección
-        detection_info = []
-        if hands_detected:
-            detection_info.append("Manos")
-        if pose_detected:
-            detection_info.append("Pose")
-            
-        detection_text = ", ".join(detection_info) if detection_info else "Nada detectado"
-        cv2.putText(frame, f"Detectado: {detection_text}", (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-        if hands_detected or pose_detected:
-            prediction, confidence = predict_tflite(landmarks, tflite_model, scaler, label_encoder, threshold=confidence_threshold)
-            
-            # Extraer predicción y mostrar en pantalla
-            prediction_window.append(prediction)
-            if len(prediction_window) > window_size:
-                prediction_window.pop(0)
-            
-            # Contar ocurrencias de cada predicción en la ventana
-            prediction_counts = {}
-            for pred in prediction_window:
-                if pred in prediction_counts:
-                    prediction_counts[pred] += 1
+    # Variables para validación de estabilidad
+    hand_detection_history = [False] * 3  # Historial de detección de manos (últimos 3 frames)
+    stable_hand_detected = False  # Indica si la detección de mano es estable
+    last_sent_command = "idle"  # Último comando enviado al servo
+    last_hand_detection_time = time.time()  # Tiempo de la última detección de mano
+    hand_detection_timeout = 0.5  # Tiempo de espera antes de desactivar el motor (500ms)
+    
+    def send_servo_command(command, retries=3):
+        """Envía comando al servo con reintentos y manejo de respuestas"""
+        for attempt in range(retries):
+            try:
+                send_sock.sendto(command.encode(), (UDP_IP_PI, UDP_PORT_SERVO))
+                send_sock.settimeout(1.0)
+                response, _ = send_sock.recvfrom(1024)
+                if response == b"OK":
+                    return True
+                elif response == b"STOPPED":
+                    print("Servo está detenido")
+                    return False
                 else:
-                    prediction_counts[pred] = 1
+                    print(f"Respuesta inesperada del servo: {response}")
+            except socket.timeout:
+                print(f"Timeout en intento {attempt + 1}")
+            except Exception as e:
+                print(f"Error enviando comando: {e}")
             
-            # Encontrar la predicción más frecuente
-            most_common = max(prediction_counts.items(), key=lambda x: x[1]) if prediction_counts else ("Desconocido", 0)
-            stable_prediction, count = most_common
-            
-            # Solo considerar predicciones estables (más de la mitad de la ventana)
-            if count >= window_size // 2 and stable_prediction != "Desconocido" and stable_prediction != "Error":
-                # Mostrar predicción estable
-                cv2.putText(frame, f"{stable_prediction} ({confidence:.2f})", (10, 70), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
-                
-                # Reproducir audio si es una nueva predicción estable
-                if stable_prediction != last_spoken_gesture:
-                    speak_text(stable_prediction)
-                    last_spoken_gesture = stable_prediction
-            else:
-                # Mostrar predicción actual con confianza
-                cv2.putText(frame, f"{prediction} ({confidence:.2f})", (10, 70), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-        else:
-            # Reiniciar ventana si no hay detección
-            prediction_window = []
-            cv2.putText(frame, "No hay detección", (10, 70), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        
-        # Mostrar transcripción de voz en pantalla
-        if last_transcription:
-            cv2.putText(frame, f"Voz: {last_transcription}", (10, frame_h - 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
-        # Mostrar frame
-        cv2.imshow("Evaluación de Señas", frame)
-        
-        # Salir con la tecla 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            if attempt < retries - 1:
+                time.sleep(0.5)
+        return False
     
-    # Liberar recursos
-    cap.release()
-    cv2.destroyAllWindows()
-    stop_speech_recognition()
+    try:
+        while True:
+            try:
+                ret, frame = cap.read()
+                if not ret:
+                    print("No se pudo leer frame de la cámara")
+                    time.sleep(0.1)
+                    continue
+
+                # Extraer landmarks sin enviar comando inmediatamente
+                try:
+                    landmarks, hands_detected, pose_detected = extract_hand_pose_landmarks(frame, None)
+                except Exception as e:
+                    print(f"Error al extraer landmarks: {str(e)}")
+                    continue
+
+                frame_h, frame_w, _ = frame.shape
+
+                # Mostrar información de detección
+                detection_info = []
+                if hands_detected:
+                    detection_info.append("Manos")
+                if pose_detected:
+                    detection_info.append("Pose")
+                detection_text = ", ".join(detection_info) if detection_info else "Nada detectado"
+                cv2.putText(frame, f"Detectado: {detection_text}", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+                # Actualizar historial de detección de manos
+                hand_detection_history.pop(0)
+                hand_detection_history.append(hands_detected)
+
+                # Determinar estabilidad
+                if all(hand_detection_history):
+                    stable_hand_detected = True
+                    last_hand_detection_time = time.time()
+                elif not any(hand_detection_history):
+                    stable_hand_detected = False
+
+                # Control automático del motor basado en detección de mano
+                current_time = time.time()
+                if stable_hand_detected and hands_detected:
+                    try:
+                        # Extraer landmarks y enviar comando de movimiento
+                        landmarks, _, _ = extract_hand_pose_landmarks(frame, send_sock)
+                        last_sent_command = "move"
+                        
+                        # Mostrar estado del motor
+                        cv2.putText(frame, "Motor: Siguiendo", (10, frame_h - 60),
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    except Exception as e:
+                        print(f"Error al enviar comando al servo: {str(e)}")
+                elif not stable_hand_detected and (current_time - last_hand_detection_time) > hand_detection_timeout:
+                    try:
+                        if send_servo_command("IDLE_SERVO"):
+                            last_sent_command = "idle"
+                            print("Enviado comando IDLE_SERVO")
+                            
+                            # Mostrar estado del motor
+                            cv2.putText(frame, "Motor: Idle", (10, frame_h - 60),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                    except Exception as e:
+                        print(f"Error al enviar comando idle al servo: {str(e)}")
+
+                # Manejo de teclas (solo para salir)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('d'):
+                    break
+
+                # Detección de gestos y predicción
+                if hands_detected or pose_detected:
+                    try:
+                        prediction, confidence = predict_tflite(
+                            landmarks, tflite_model, scaler, label_encoder,
+                            threshold=confidence_threshold
+                        )
+                        prediction_window.append(prediction)
+                        if len(prediction_window) > window_size:
+                            prediction_window.pop(0)
+
+                        counts = {p: prediction_window.count(p) for p in set(prediction_window)}
+                        stable_prediction, count = max(counts.items(), key=lambda x: x[1], default=("Desconocido", 0))
+
+                        if count >= window_size // 2 and stable_prediction not in ("Desconocido", "Error"):
+                            cv2.putText(frame, f"{stable_prediction} ({confidence:.2f})", (10, 70),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+                            if stable_prediction != last_spoken_gesture:
+                                speak_text(stable_prediction)
+                                last_spoken_gesture = stable_prediction
+                        else:
+                            cv2.putText(frame, f"{prediction} ({confidence:.2f})", (10, 70),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                    except Exception as e:
+                        print(f"Error en predicción: {str(e)}")
+                else:
+                    prediction_window.clear()
+                    cv2.putText(frame, "No hay detección", (10, 70),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+                # Mostrar transcripción de voz
+                if last_transcription:
+                    cv2.putText(frame, f"Voz: {last_transcription}", (10, frame_h - 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+                cv2.imshow("Evaluación de Señas", frame)
+
+            except Exception as e:
+                print(f"Error en el bucle principal: {str(e)}")
+                continue
+
+    except Exception as e:
+        print(f"Error crítico en modo evaluación: {str(e)}")
+
+    finally:
+        try:
+            cap.release()
+            cv2.destroyAllWindows()
+            stop_speech_recognition()
+            send_sock.sendto(b"STOP_SERVO", (UDP_IP_PI, UDP_PORT_SERVO))
+            print("Servo detenido al finalizar evaluación")
+        except Exception as e:
+            print(f"Error al limpiar recursos: {str(e)}")
+
+
+
 ### FUNCION PRINCIPAL 
 def main():
     global model, is_trained, data, labels
@@ -757,6 +881,11 @@ def main():
     model = None
     data = []
     labels = []
+    
+    # Enviar comando de inicio al servo
+    print("Enviando comando de inicio al servo...")
+    send_sock.sendto(b"start_motor", (UDP_IP_PI, UDP_PORT_SERVO))
+    print("Servo activado.")
     
     # Cargar datos existentes
     load_data()
@@ -789,6 +918,9 @@ def main():
         elif opcion == '0':
             print("Deteniendo servicio de reconocimiento de voz...")
             stop_speech_recognition()
+            print("Enviando comando de parada al servo...")
+            send_sock.sendto(b"stop_motor", (UDP_IP_PI, UDP_PORT_SERVO))
+            print("Servo detenido.")
             print("Saliendo del programa...")
             break
         else:
