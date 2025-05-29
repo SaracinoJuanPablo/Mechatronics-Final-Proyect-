@@ -74,8 +74,13 @@ HEARTBEAT_TIMEOUT = 3  # 3 segundos sin heartbeat = motor apagado
 # Tamaño máximo del fragmento UDP
 MAX_FRAGMENT_SIZE = 1460
 
+# Buffer UDP
+BUFFER_UDP = 65536 #16 bits
+
 # Crear sockets
 video_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+video_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, BUFFER_UDP)
+
 command_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 audio_tx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 text_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
